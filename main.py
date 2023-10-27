@@ -19,6 +19,7 @@ from utils.plots import plot_one_box
 from utils.torch_utils import select_device, time_synchronized
 
 import threading
+
 # Create a flag to indicate whether the video has completed
 video_completed = False
 
@@ -27,12 +28,12 @@ def getVideoSource(source, width, height):
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     return cap
-    
+
 # Define a function to display the video
 def display_video():
     global video_completed
-    filmpath=opt.filmpath
-    
+    filmpath = opt.filmpath
+
     camera = getVideoSource(filmpath, 720, 480)
     player = MediaPlayer(filmpath)
 
@@ -50,11 +51,10 @@ def display_video():
             break
 
     camera.release()
-    #cv2.destroyAllWindows()
+    # cv2.destroyAllWindows()
 
 # Create a thread to display the video
 video_thread = threading.Thread(target=display_video)
-
 
 # Clear the previous data in 'file.txt'
 with open('file.txt', 'w') as file:
@@ -62,7 +62,6 @@ with open('file.txt', 'w') as file:
 
 # Define a global variable to keep track of frame counts
 frame_count = 0
-
 
 def detect(opt):
     global frame_count
@@ -102,7 +101,7 @@ def detect(opt):
         model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
     t0 = time.time()
 
-    if source=='0' and playfilm==1:
+    if source == '0' and playfilm == 1:
         if not video_thread.is_alive():  # Start the video thread only if it's not already running
             video_thread.start()
 
@@ -139,77 +138,71 @@ def detect(opt):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
-                # Print results
-                for c in det[:, -1].unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
-                    s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
-                images = []
-
-                for *xyxy, conf, cls in reversed(det):
+                # Predict emotions for each face
+                for *xyxy, conf, cls in det:
                     x1, y1, x2, y2 = xyxy[0], xyxy[1], xyxy[2], xyxy[3]
-                    images.append(im0.astype(np.uint8)[int(y1):int(y2), int(x1): int(x2)])
-                if images:
-                    emotions = detect_emotion(images, show_conf)
-                    if len(det) > 0 and emotions:  # Ensure there are detections and corresponding emotions
-                        with open('file.txt', 'a') as file:
-                            e = emotions[0][0]
-                            emo = e.split(' (')
-                            file.write(f"{emo[0]}\n")
+                    face = im0[int(y1):int(y2), int(x1):int(x2)]
+                    if face.size > 0:  # Ensure there's a valid face
+                        emotions = detect_emotion([face], show_conf)
+                        if emotions:
+                            with open('file.txt', 'a') as file:
+                                e = emotions[0][0]
+                                emo = e.split(' (')
+                                file.write(f"{emo[0]}\n")
+                    if view_img:  # Display the video frame with bounding boxes
+                        label = emotions[0][0]
+                        colour = colors[emotions[0][1]]
+                        plot_one_box(xyxy, im0, label=label, color=colour, line_thickness=opt.line_thickness)
 
-                if view_img and source == '0':  # Display the video frame with bounding boxes for webcam, not for video
-                    label = emotions[0][0]
-                    colour = colors[emotions[0][1]]
-                    plot_one_box(xyxy, im0, label=label, color=colour, line_thickness=opt.line_thickness)
+        # Stream results
+        if view_img:
+            if source == '0' and livefootage == 1 and playfilm == 0:  # Display the video frame for webcam only
+                display_img = cv2.resize(im0, (400, 300))
+                cv2.imshow("Emotion Detection", display_img)
+                cv2.waitKey(1)  # 1 millisecond
+            elif source == '0' and livefootage == 0 and playfilm == 1:  # Display the video frame for webcam only
+                if video_completed:
+                    video_thread.join()
+                    return
+            elif source == '0' and livefootage == 1 and playfilm == 1:
+                display_img = cv2.resize(im0, (400, 300))
+                cv2.imshow("Emotion Detection", display_img)
+                cv2.waitKey(1)  # 1 millisecond
+                if video_completed:
+                    video_thread.join()
+                    return
 
-            # Stream results
-            if view_img:
-                if source == '0' and livefootage==1 and playfilm==0:  # Display the video frame for webcam only
-                    display_img = cv2.resize(im0, (400,300))
-                    cv2.imshow("Emotion Detection", display_img)
-                    cv2.waitKey(1)  # 1 millisecond
-                elif source == '0' and livefootage==0 and playfilm==1:  # Display the video frame for webcam only
-                    if video_completed:
-                        video_thread.join()
-                        return
-                elif source=='0' and livefootage==1 and playfilm==1:
-                    display_img = cv2.resize(im0, (400,300))
-                    cv2.imshow("Emotion Detection", display_img)
-                    cv2.waitKey(1)  # 1 millisecond
-                    if video_completed:
-                        video_thread.join()
-                        return
-
-            if not nosave:
-                ext = save_path.split(".")[-1]
-                if ext in ["mp4","avi"]:
-                    if vid_path != save_path:
-                        vid_path = save_path
-                        if isinstance(vid_writer, cv2.VideoWriter):
-                            vid_writer.release()
-                        if vid_cap:
-                            fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                            w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                            h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        else:
-                            fps, w, h = 30, im0.shape[1], im0.shape[0]
-                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                    vid_writer.write(im0)
-                elif ext in ["bmp", "pbm", "pgm", "ppm", "sr", "ras", "jpeg", "jpg", "jpe", "jp2", "tiff", "tif", "png"]:
-                    cv2.imwrite(save_path, im0)
-                else:
-                    output_path = os.path.join(save_path, os.path.split(path)[1])
-                    create_folder(output_path)
-                    cv2.imwrite(output_path, im0)
+        if not nosave:
+            ext = save_path.split(".")[-1]
+            if ext in ["mp4", "avi"]:
+                if vid_path != save_path:
+                    vid_path = save_path
+                    if isinstance(vid_writer, cv2.VideoWriter):
+                        vid_writer.release()
+                    if vid_cap:
+                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    else:
+                        fps, w, h = 30, im0.shape[1], im0.shape[0]
+                    vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+                vid_writer.write(im0)
+            elif ext in ["bmp", "pbm", "pgm", "ppm", "sr", "ras", "jpeg", "jpg", "jpe", "jp2", "tiff", "tif", "png"]:
+                cv2.imwrite(save_path, im0)
+            else:
+                output_path = os.path.join(save_path, os.path.split(path)[1])
+                create_folder(output_path)
+                cv2.imwrite(output_path, im0)
 
         if show_fps:
-            print(f"FPS: {1/(time.time()-t0):.2f}"+" "*5, end="\r")
+            print(f"FPS: {1 / (time.time() - t0):.2f}" + " " * 5, end="\r")
             t0 = time.time()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', type=str, default='0', help='source')  # Use '0' for webcam, or provide the path to your video file
-    parser.add_argument('--livefootage', type=int, default=1, help='Display live footage to user') # use 1 if you want to show user his video, 0 otherwise. 
-    parser.add_argument('--playfilm', type=int, default=1, help='Display film to user') # Use 1 if you want user to see the film, 0 otherwise.
+    parser.add_argument('--livefootage', type=int, default=1, help='Display live footage to the user')  # use 1 if you want to show the user his video, 0 otherwise.
+    parser.add_argument('--playfilm', type=int, default=0, help='Display film to the user')  # Use 1 if you want the user to see the film, 0 otherwise.
     parser.add_argument('--filmpath', type=str, default='video.mp4', help='Provide Path of Film here.')
     parser.add_argument('--img-size', type=int, default=256, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='face confidence threshold')
@@ -229,11 +222,3 @@ if __name__ == '__main__':
     check_requirements(exclude=('pycocotools', 'thop'))
     with torch.no_grad():
         detect(opt=opt)
-
-# In main(), 
-# in following line: parser.add_argument('--source',.............. use default='0' for webcam
-# use video.mp4 for video input.
-
-# In main(),
-#  in following line: parser.add_argument('--frame-skip', type=int, default=X,
-# .............. use default='X' skipping X frames.
