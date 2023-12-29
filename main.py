@@ -65,13 +65,14 @@ frame_count = 0
 
 def detect(opt):
     global frame_count
-    source, livefootage, playfilm, view_img, imgsz, nosave, show_conf, save_path, show_fps, frame_skip = opt.source, opt.livefootage, opt.playfilm, not opt.hide_img, opt.img_size, opt.no_save, not opt.hide_conf, opt.output_path, opt.show_fps, opt.frame_skip
+    source, livefootage, playfilm, view_img, imgsz, nosave, show_conf, save_path,  frame_skip = opt.source, opt.livefootage, opt.playfilm, not opt.hide_img, opt.img_size, opt.no_save, not opt.hide_conf, opt.output_path,  opt.frame_skip
 
     # Directories
     create_folder(save_path)
 
     # Initialize
     set_logging()
+    previous_minute=0
     device = select_device(opt.device)
     init(device)
     half = device.type != 'cpu'  # half precision only supported on CUDA
@@ -148,7 +149,13 @@ def detect(opt):
                             with open('file.txt', 'a') as file:
                                 e = emotions[0][0]
                                 emo = e.split(' (')
-                                file.write(f"{emo[0]}\n")
+                                # calculate and display fps
+                                current_minutes=int(((time.time()-t0)/15)+1)#divide by 60 for 1 min interval, divide by 15 for 15 sec interval
+                                if previous_minute!=current_minutes:
+                                    previous_minute=current_minutes
+                                    file.write(f"{current_minutes}\n")
+
+                                file.write(f"{emotions[0][0]}\n")
                     if view_img:  # Display the video frame with bounding boxes
                         label = emotions[0][0]
                         colour = colors[emotions[0][1]]
@@ -194,15 +201,15 @@ def detect(opt):
                 create_folder(output_path)
                 cv2.imwrite(output_path, im0)
 
-        if show_fps:
-            print(f"FPS: {1 / (time.time() - t0):.2f}" + " " * 5, end="\r")
-            t0 = time.time()
+        # if show_fps:
+        #     print(f"FPS: {1 / (time.time() - t0):.2f}" + " " * 5, end="\r")
+        #     t0 = time.time()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', type=str, default='0', help='source')  # Use '0' for webcam, or provide the path to your video file
     parser.add_argument('--livefootage', type=int, default=1, help='Display live footage to the user')  # use 1 if you want to show the user his video, 0 otherwise.
-    parser.add_argument('--playfilm', type=int, default=0, help='Display film to the user')  # Use 1 if you want the user to see the film, 0 otherwise.
+    parser.add_argument('--playfilm', type=int, default=1, help='Display film to the user')  # Use 1 if you want the user to see the film, 0 otherwise.
     parser.add_argument('--filmpath', type=str, default='video.mp4', help='Provide Path of Film here.')
     parser.add_argument('--img-size', type=int, default=256, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='face confidence threshold')
@@ -216,7 +223,7 @@ if __name__ == '__main__':
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--line-thickness', default=5, type=int, help='bounding box thickness (pixels)')
     parser.add_argument('--hide-conf', default=True, action='store_true', help='hide confidences')
-    parser.add_argument('--show-fps', default=False, action='store_true', help='print fps to console')
+    #parser.add_argument('--show-fps', default=False, action='store_true', help='print fps to console')
     parser.add_argument('--frame-skip', type=int, default=10, help='skip frames for video processing')
     opt = parser.parse_args()
     check_requirements(exclude=('pycocotools', 'thop'))
